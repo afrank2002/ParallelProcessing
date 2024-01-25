@@ -1,89 +1,111 @@
-#include <thread> 
-#include <atomic> 
-#include <semaphore> 
-#include <chrono> 
-#include <iostream> 
+#include <thread>
+#include <atomic>
+#include <semaphore>
+#include <chrono>
+#include <iostream>
 #include <mutex>
 #include <fstream>
 
+using namespace std;
+
 class HashNode {
 public:
-    std::string key;
-    int value;
-    HashNode* next;
+    string key;
+    short value;
+    HashNode *next;
 
-    HashNode(std::string key, int value) : key(key), value(value), next(nullptr) {}
+    HashNode(string key, short value) : key(key), value(value), next(nullptr) {}
 };
 
 class HashMap {
 private:
-    HashNode** table;
-    int tableSize;
-    int threshold = 0.75f;
-    int maxSize;
-    int currentSize = 0;
-    int hashFunction(const std::string& key) {
-        const int p = 31;  // Prime number used as base
+    float threshold = 0.75;
+    short maxSize;
+    short currentSize = 0;
+
+    short hashFunction(const string &key) const {
+        const short p = 31;  // Prime number used as base
         const int m = 1e9 + 9;  // Large prime number for modulo operation
         long long hashValue = 0;
         long long p_pow = 1;
 
-        for (char c : key) {
+        for (char c: key) {
             hashValue = (hashValue + (c - 'a' + 1) * p_pow) % m;
             p_pow = (p_pow * p) % m;
         }
 
-        return hashValue % tableSize;  // Ensure it fits into the table
+        return (short) (hashValue % tableSize);  // Ensure it fits into the table
     }
 
 
 public:
-    HashMap(int size) {
-        tableSize = size;
-        maxSize = (int) (tableSize * threshold);
-        table = new HashNode*[tableSize];
-        //initialize all fields to null
-        for(int i = 0; i < tableSize; ++i) {
-            table[i] = nullptr;
-        }
-     }
+    HashNode **table;
+    int tableSize;
 
-    void insert(std::string key, int count) {
-        int index = hashFunction(key);
-        HashNode* currentNode = table[index];
-        HashNode* previousNode = nullptr;
-        if(currentSize <= maxSize)
-        {
-            while (currentNode != nullptr) {
-                if (currentNode->key == key) {
-                    currentNode->value = count;
-                    return; 
-                }
-                previousNode = currentNode;
-                currentNode = currentNode->next;
+    explicit HashMap(int size) {
+        tableSize = size;
+        maxSize = (short) (tableSize * threshold);
+        table = new HashNode *[tableSize];
+        //initialize all fields to null
+        fill(table, table + tableSize, nullptr);
+    }
+    void rehashInsert(const string &key, short count) {
+        short index = hashFunction(key);
+        HashNode *currentNode = table[index];
+        HashNode *previousNode = nullptr;
+
+        while (currentNode != nullptr) {
+            if (currentNode->key == key) {
+                currentNode->value = count;
+                return;
             }
-            //node not found in map already, must make new node
-            HashNode* newNode = new HashNode(key, count);;
-            if(previousNode == nullptr) {
-                previousNode = newNode;
-            }
-            else 
-            {
-                previousNode->next = newNode;
-            }
-            ++currentSize;
+            previousNode = currentNode;
+            currentNode = currentNode->next;
         }
-        else {
-            resize(key, count);
+
+        HashNode *newNode = new HashNode(key, count);
+        if (previousNode == nullptr) {
+            table[index] = newNode;
+        } else {
+            previousNode->next = newNode;
         }
     }
 
-    int get(std::string key) {
+    void insert(const string &key, short count) {
+        //see if a resize is needed
+        if (currentSize >= maxSize) {
+            resize();
+        }
+
+        short index = hashFunction(key);
+        HashNode *currentNode = table[index];
+        HashNode *previousNode = nullptr;
+
+        while (currentNode != nullptr) {
+            if (currentNode->key == key) {
+                currentNode->value = count;
+                return;
+            }
+            previousNode = currentNode;
+            currentNode = currentNode->next;
+        }
+
+        //node not found in map already, must make new node
+        HashNode *newNode = new HashNode(key, count);;
+        if (previousNode == nullptr) {
+            table[index] = newNode;
+        } else {
+            previousNode->next = newNode;
+        }
+        ++currentSize;
+    }
+
+    int get(const string &key) {
         // Compute the hash code and find the corresponding bucket index
         int index = hashFunction(key) % tableSize;
-        
+
         // Search for the key in the linked list at the computed index
-        HashNode* node = table[index];
+        HashNode *node = table[index];
         while (node != nullptr) {
             if (node->key == key) {
                 return node->value;  // Key found, return value
@@ -95,60 +117,120 @@ public:
         return -1;
     }
 
-    int resize(std::string key, int count) {
+    void resize() {
         int oldTableSize = tableSize;
-        HashNode** oldTable = table;
+        HashNode **oldTable = table;
         tableSize *= 2;
-        maxSize = (int) (tableSize * threshold);
-        table = new HashNode* [tableSize];
-        for(int i = 0; i < oldTableSize; ++i) {
-            HashNode* currentNode = table[i];
-            HashNode* previousNode = nullptr;
-            if(currentNode == nullptr)
-            {
-                table[i] = nullptr;
+        maxSize = (short) (tableSize * threshold);
+        table = new HashNode *[tableSize];
+        fill(table, table + tableSize, nullptr);
+
+        for (int i = 0; i < oldTableSize; ++i) {
+            HashNode *oldNode = oldTable[i];
+            while (oldNode != nullptr) {
+                rehashInsert(oldNode->key, oldNode->value);
+                HashNode *temp = oldNode;
+                oldNode = oldNode->next;
+                delete temp;
             }
-            else {
-                table[i] = currentNode;
-                while (currentNode != nullptr) {
-                    previousNode = currentNode;
-                    currentNode = currentNode->next;
-                    previousNode->next = currentNode;
-                }
-            }      
         }
-        for(int j = oldTableSize; j < tableSize; ++j) {
-            table[j] = nullptr;
-        }
-        insert(key, count);
+
+        delete[] oldTable;
     }
+
     // Additional functions like resize, remove, etc.
 };
 
-std::string normalizeWord(const std::string& word) {
-    std::string normalized;
-    for (char ch : word) {
-        if (std::isalpha(ch)) {
-            normalized += std::tolower(ch);
+class WordCount {
+public:
+    string word;
+    short count;
+    WordCount* words[];
+
+    WordCount() : word(""), count(0) {}
+    explicit WordCount(const std::string& w, int c) : word(w), count(c) {}
+
+};
+
+string normalizeWord(const string &word) {
+    string normalized;
+    for (char ch: word) {
+        if (isalpha(ch)) {
+            normalized += tolower(ch);
         }
     }
     return normalized;
 }
 
+int countWords(HashNode **table, int tableSize) {
+    int count = 0;
+    for(int i = 0; i < tableSize; ++i) {
+        for(HashNode* node = table[i]; node != nullptr; node = node->next) {
+        ++count;
+        }
+    }
+    return count;
+}
+//used for quick sort
+int compareWordCount(const void* a, const void* b) {
+    const WordCount *wordA = static_cast<const WordCount*>(a);
+    const WordCount *wordB = static_cast<const WordCount*>(b);
+    return wordB->count - wordA->count; // Descending order
+}
+
+/*int wordArray(HashNode **table, int tableSize) {
+    for(int i = 0; i < tableSize; ++i) {
+        HashNode* word = table[i];
+
+        while (word != nullptr) {
+            WordCount* newWord = new WordCount(word->key, word->value);
+            word = word->next;
+        }
+
+    }
+}*/
+
+void outputHashMap(HashMap& hashMap, const string& filename) {
+    int totalWords = countWords(hashMap.table, hashMap.tableSize); // Assuming countWords function is implemented
+    WordCount* wordCounts = new WordCount[totalWords];
+
+    int index = 0;
+    for (int i = 0; i < hashMap.tableSize; ++i) {
+        HashNode* node = hashMap.table[i];
+        while (node != nullptr) {
+            wordCounts[index++] = WordCount(node->key, node->value);
+            node = node->next;
+        }
+    }
+
+    // Sort the word counts
+    qsort(wordCounts, totalWords, sizeof(WordCount), compareWordCount);
+
+    // Output to file
+    ofstream outFile(filename);
+    for (int i = 0; i < totalWords; ++i) {
+        outFile << wordCounts[i].word << ": " << wordCounts[i].count << endl;
+    }
+
+    outFile.close();
+    delete[] wordCounts; // Cleanup
+}
+
+
 int main() {
     HashMap wordCount(1000); // Start with an initial size
-    std::ifstream inputFile("input.txt");
-    std::string word;
+    ifstream inputFile("input.txt");
+    string word;
 
     if (!inputFile) {
-        std::cerr << "Error opening input file." << std::endl;
+        cerr << "Error opening input file." << endl;
         return 1;
     }
 
     while (inputFile >> word) {
         word = normalizeWord(word);
         if (!word.empty()) {
-            int currentCount = wordCount.get(word);
+            short currentCount = wordCount.get(word);
             wordCount.insert(word, currentCount + 1);
         }
     }
