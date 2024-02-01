@@ -205,7 +205,7 @@ public:
 string normalizeWord(const string &word) {
     string normalized;
     for (char ch: word) {
-        if (isalpha(ch) || ch == '-') {
+        if (isalpha(ch)) {
             normalized += tolower(ch);
         }
     }
@@ -332,14 +332,21 @@ int main() {
     HashMap wordCount(1000); // Start with an initial size
     string fileName = "input.txt";
     ifstream inputFile(fileName);
+    long fileLeng = getFileLength(inputFile);
+    string word;
 
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
         return 1;
     }
-    dispatchThreads(8, inputFile, wordCount);
+    dispatchThreads(2, inputFile, wordCount);
 
     outputHashMap(wordCount, "output.txt");
+    // Extract and sort the words by occurrences
+    // ...
+
+    // Output results
+    // ...
 
     return 0;
 }
