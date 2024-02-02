@@ -22,11 +22,12 @@ class HashMap {
 private:
     float threshold = 0.75;
     short maxSize;
-    std::atomic<short> currentSize{0};  // Make 'currentSize' atomic and directly initialize
-    std::mutex mutex;
+    atomic<short> currentSize{0};  // Make 'currentSize' atomic and directly initialize
+    mutex mutex;
+    std::mutex* bucketMutexes;
 
 
-    short hashFunction(const string &key) const {
+    int hashFunction(const string &key) const {
         const short p = 31;  // Prime number used as base
         const int m = 1e9 + 9;  // Large prime number for modulo operation
         long hashValue = 0;
@@ -37,7 +38,11 @@ private:
             p_pow = (p_pow * p) % m;
         }
 
-        return (short) (hashValue % tableSize);  // Ensure it fits into the table
+        long index = hashValue % m; // Calculate modulo with m
+        if (index < 0) {
+            index += m; // Ensure index is positive
+        }
+        return static_cast<int>(index % tableSize);
     }
 
 
@@ -48,7 +53,10 @@ public:
     explicit HashMap(int size) {
         tableSize = size;
         maxSize = (short) (tableSize * threshold);
-        table = (HashNode **) malloc(sizeof(HashNode*) * tableSize);
+        table = new HashNode*[tableSize];
+        bucketMutexes = new std::mutex[tableSize];  // Allocate array of mutexes
+
+
         //initialize all fields to null
         fill(table, table + tableSize, nullptr);
     }
@@ -59,14 +67,18 @@ public:
             while (node != nullptr) {
                 HashNode *temp = node;
                 node = node->next;
-                free(temp);
+                //free(temp);
+                delete(temp);
+
             }
         }
-        free(table);
+        delete[] table;
+        delete[] bucketMutexes;
+
     }
 
     void rehashInsert(const string &key, short count) {
-        short index = hashFunction(key);
+        int index = hashFunction(key);
         HashNode *currentNode = table[index];
         HashNode *previousNode = nullptr;
 
@@ -79,12 +91,8 @@ public:
             currentNode = currentNode->next;
         }
 
-        HashNode *newNode = (HashNode*) malloc(sizeof (HashNode));
-        if(newNode != nullptr)
-        {
-            newNode->key =key;
-            newNode->value = count;
-        }
+        HashNode *newNode = new HashNode(key, count);
+
         if (previousNode == nullptr) {
             table[index] = newNode;
         } else {
@@ -92,50 +100,54 @@ public:
         }
     }
 
-    void insert(const string &key) {
-        //see if a resize is needed
-        if (currentSize >= maxSize) {
-            std::lock_guard<std::mutex> lock(mutex);
-            resize();
-        }
-
-        short index = hashFunction(key);
-        short count = get(key) + 1;
-        HashNode *currentNode = table[index];
-        HashNode *previousNode = nullptr;
-
-        while (currentNode != nullptr) {
-            if (currentNode->key == key) {
-                currentNode->value = count;
-                return;
+    void insert(const string &key, const int &loc) {
+        int index = loc;
+        if(!key.empty()) {
+            cout << "Word to insert: " << key << endl;
+            cout << "Loc: " << index << endl;
+            //see if a resize is needed
+            if (currentSize >= maxSize) {
+                std::lock_guard<std::mutex> lock(mutex);
+                resize();
+                index = hashFunction(key);
+                cout << "resized index: " << index << endl;
             }
-            previousNode = currentNode;
-            currentNode = currentNode->next;
-        }
+            std::lock_guard<std::mutex> lock(bucketMutexes[index]);
+            short count = get(key) + 1;
+            HashNode *currentNode = table[index];
+            HashNode *previousNode = nullptr;
 
-        //node not found in map already, must make new node
-        HashNode *newNode = (HashNode*) malloc(sizeof (HashNode));
-        if(newNode != nullptr)
-        {
-            newNode->key =key;
-            newNode->value = ++count;
+            while (currentNode != nullptr) {
+                if (currentNode->key == key) {
+                    currentNode->value = count;
+                    return;
+                }
+                previousNode = currentNode;
+                currentNode = currentNode->next;
+            }
+
+            //node not found in map already, must make new node
+            HashNode *newNode = new HashNode(key, ++count);
+
+            if (previousNode == nullptr) {
+                table[index] = newNode;
+            } else {
+
+                previousNode->next = newNode;
+            }
+            ++currentSize;
         }
-        if (previousNode == nullptr) {
-            table[index] = newNode;
-        } else {
-            std::lock_guard<std::mutex> lock(mutex);
-            previousNode->next = newNode;
-        }
-        ++currentSize;
     }
 
     void insertWords(const std::string& words) {
         size_t start = 0;
         size_t end = words.find(' ');
+        int index;
 
         while (end != std::string::npos) {
             std::string word = words.substr(start, end - start);
-            insert(word);
+            index = hashFunction(word);
+            insert(word, index);
 
             // Update start and end for the next word
             start = end + 1;
@@ -144,7 +156,8 @@ public:
 
         // Insert the last word (or the only word if there are no spaces)
         std::string lastWord = words.substr(start);
-        insert(lastWord);
+        index = hashFunction(lastWord);
+        insert(lastWord, index);
     }
 
 
@@ -167,12 +180,15 @@ public:
     }
 
     void resize() {
-
+        cout << "resizing!" << endl;
         int oldTableSize = tableSize;
         HashNode **oldTable = table;
         tableSize *= 2;
         maxSize = (short) (tableSize * threshold);
-        table = (HashNode **) malloc(sizeof(HashNode*) * tableSize);
+        table = new HashNode*[tableSize];
+        std::mutex* oldBucket = bucketMutexes;
+        bucketMutexes = new std::mutex[tableSize];
+
         fill(table, table + tableSize, nullptr);
 
         for (int i = 0; i < oldTableSize; ++i) {
@@ -181,14 +197,13 @@ public:
                 rehashInsert(oldNode->key, oldNode->value);
                 HashNode *temp = oldNode;
                 oldNode = oldNode->next;
-                free(temp);
+                delete(temp);
+
             }
         }
-
-        free(oldTable);
+        delete[] oldTable;
+        delete[] oldBucket;
     }
-
-    // Additional functions like resize, remove, etc.
 };
 
 class WordCount {
@@ -198,7 +213,7 @@ public:
     WordCount* words[];
 
     WordCount() : word(""), count(0) {}
-    explicit WordCount(const std::string& w, int c) : word(w), count(c) {}
+    explicit WordCount(std::string  w, int c) : word(std::move(w)), count(c) {}
 
 };
 
@@ -209,7 +224,7 @@ string normalizeWord(const string &word) {
             normalized += tolower(ch);
         }
     }
-    return normalized + ' ';
+    return normalized;
 }
 
 int countWords(HashNode **table, int tableSize) {
@@ -261,7 +276,8 @@ void quickSort(WordCount* arr, int low, int high) {
 
 void outputHashMap(HashMap& hashMap, const string& filename) {
     int totalWords = countWords(hashMap.table, hashMap.tableSize);
-    WordCount* wordCounts = (WordCount*)malloc(sizeof(WordCount) * totalWords);
+    WordCount* wordCounts = new WordCount[totalWords];
+
     int index = 0;
 
     for (int i = 0; i < hashMap.tableSize; ++i) {
@@ -282,7 +298,8 @@ void outputHashMap(HashMap& hashMap, const string& filename) {
     }
 
     outFile.close();
-    free(wordCounts); // Cleanup
+    delete[] wordCounts; // Cleanup
+
 }
 
 long getFileLength(ifstream& file) {
@@ -303,19 +320,28 @@ void dispatchThreads(int numThreads, ifstream& file, HashMap &wordCount) {
     thread* threads = new thread[numThreads];
     long leng = getFileLength(file);
     string word;
+    bool firstWord = true;
     for(int i = numThreads; i > 0; i--) {
         int count = 0;
         int chunkSize = leng / i;
         long end = (long)file.tellg() + chunkSize;
         string segment;
+        cout << "Thread #" << i << " ";
+        cout << "starting loc: " << file.tellg() << " ";
         while (file >> word && (long)file.tellg() < end) {
             if (!word.empty() && isalpha(word[0])) {
+                if (!firstWord) {
+                    segment += " ";  // Add a space before all but the first word
+                }
+                firstWord = false;
                 segment += normalizeWord(word);
             }
         }
+        cout << "ending loc: " << file.tellg() << endl;
         threads[i - 1] = thread([&wordCount, segment]() {
             wordCount.insertWords(segment);
         });
+
         leng -= chunkSize;
     }
 
@@ -323,13 +349,12 @@ void dispatchThreads(int numThreads, ifstream& file, HashMap &wordCount) {
     for (int i = 0; i < numThreads; i++) {
         threads[i].join();
     }
-
     delete[] threads; // Cleanup
 }
 
 
 int main() {
-    HashMap wordCount(1000); // Start with an initial size
+    HashMap wordCount(100); // Start with an initial size
     string fileName = "input.txt";
     ifstream inputFile(fileName);
 
@@ -337,7 +362,7 @@ int main() {
         cerr << "Error opening input file." << endl;
         return 1;
     }
-    dispatchThreads(8, inputFile, wordCount);
+    dispatchThreads(17, inputFile, wordCount);
 
     outputHashMap(wordCount, "output.txt");
 
