@@ -1,6 +1,4 @@
 #include <thread>
-#include <atomic>
-#include <semaphore>
 #include <chrono>
 #include <iostream>
 #include <mutex>
@@ -11,7 +9,7 @@ using namespace std;
 class HashNode {
 public:
     string key;
-    std::atomic<long> value;  // Make 'value' atomic
+    long value;
     HashNode *next;
 
     //rather than making a copy of a copy, move the copy to the parameter to reduce memory usage
@@ -22,39 +20,15 @@ class HashMap {
 private:
     float threshold = 0.8;
     long maxSize;
-    atomic<long> currentSize{0};  // Make 'currentSize' atomic and directly initialize
-    mutex globalMutex;
-    std::mutex* bucketMutexes;
+    long currentSize = 0;
     int segmentSize = 1000;
     int mutexCount;
-
-
-
-    int hashFunction(const string &key) const {
-        const short p = 31;  // Prime number used as base
-        const int m = 1e9 + 9;  // Large prime number for modulo operation
-        long hashValue = 0;
-        long p_pow = 1;
-
-        for (char c: key) {
-            hashValue = (hashValue + (c - 'a' + 1) * p_pow) % m;
-            p_pow = (p_pow * p) % m;
-        }
-
-        long index = hashValue % m; // Calculate modulo with m
-        if (index < 0) {
-            index += m; // Ensure index is positive
-        }
-        return static_cast<int>(index % tableSize);
-    }
-    size_t getSegmentIndex(size_t bucketIndex) const {
-        return bucketIndex / segmentSize;
-    }
 
 
 public:
     HashNode **table;
     int tableSize;
+    std::mutex* bucketMutexes;
 
     explicit HashMap(int size) {
         tableSize = size;
@@ -84,85 +58,49 @@ public:
 
     }
 
-    void rehashInsert(HashNode* node) {
-        int index = hashFunction(node->key);
-        node->next = table[index]; // Directly link the existing node to the start of the list
-        table[index] = node; // Make the node the new head of the list at index
-    }
-    void resize() {
-        int newTableSize = tableSize * 2;
-        auto newTable = new HashNode*[newTableSize]();
-        int newMutexCount = (newTableSize + segmentSize - 1) / segmentSize;
-        auto newBucketMutexes = new std::mutex[newMutexCount];
-        std::fill(newTable, newTable + newTableSize, nullptr);
+    int hashFunction(const string &key) const {
+        const short p = 31;  // Prime number used as base
+        const int m = 1e9 + 9;  // Large prime number for modulo operation
+        long hashValue = 0;
+        long p_pow = 1;
 
-        // Temporarily save the old table information
-        HashNode** oldTable = table;
-        int oldTableSize = tableSize;
-
-        std::mutex* oldBucket = bucketMutexes;
-        bucketMutexes = new std::mutex[tableSize];
-
-        // Update the hash map to use the new table
-        table = newTable;
-        tableSize = newTableSize;
-        maxSize = static_cast<long>(threshold * tableSize);
-
-        // Iterate through the old table and rehash each node
-        for (int i = 0; i < oldTableSize; ++i) {
-            HashNode* currentNode = oldTable[i];
-            while (currentNode != nullptr) {
-                HashNode* nextNode = currentNode->next; // Temporarily save the next node
-                currentNode->next = nullptr; // Disconnect the current node from the list
-                rehashInsert(currentNode); // Rehash the current node into the new table
-                currentNode = nextNode; // Move to the next node in the old list
-            }
+        for (char c: key) {
+            hashValue = (hashValue + (c - 'a' + 1) * p_pow) % m;
+            p_pow = (p_pow * p) % m;
         }
 
-        delete[] oldTable;
-        delete[] bucketMutexes; // Delete the old mutex array
-        bucketMutexes = newBucketMutexes; // Use the new mutex array
+        long index = hashValue % m; // Calculate modulo with m
+        if (index < 0) {
+            index += m; // Ensure index is positive
+        }
+        return static_cast<int>(index % tableSize);
+    }
+    size_t getSegmentIndex(size_t bucketIndex) const {
+        return bucketIndex / segmentSize;
     }
 
-
-    void insert(const string &key, const int &loc) {
+    void insert(const string &key) {
         if (key.empty()) return; // Early exit if the key is empty
 
-        int index = loc;
+        int index = hashFunction(key);
 
-        // First check to potentially avoid locking
-        if (currentSize.load(std::memory_order_relaxed) >= maxSize) {
-            std::lock_guard<std::mutex> lock(globalMutex);
-            if (currentSize.load(std::memory_order_relaxed) >= maxSize) { // Double-check pattern
-                resize(); // This may be optimized to avoid resizing too often
-                index = hashFunction(key); // Only rehash if resize occurred
+        // Directly access this HashMap's table
+        HashNode** slot = &table[index];
+        for (HashNode* currentNode = *slot; currentNode; currentNode = currentNode->next) {
+            if (currentNode->key == key) {
+                currentNode->value++; // Since it's thread-specific, no need for atomic
+                return;
             }
         }
 
-        size_t segmentIndex = getSegmentIndex(index);
-       // cout << "Word: " << key << " Index: " << index << endl;
+        // Node not found, create a new node and link it
+        HashNode* newNode = new HashNode(key, 1);
+        newNode->next = *slot;
+        *slot = newNode;
 
-        // cout << "Segment index: " << segmentIndex << endl;
-        {
-            std::lock_guard<std::mutex> lock(bucketMutexes[segmentIndex]);
-            HashNode *&slot = table[index];
-            for (HashNode *currentNode = slot; currentNode; currentNode = currentNode->next) {
-                if (currentNode->key == key) {
-                    currentNode->value.fetch_add(1, std::memory_order_relaxed);
-                    return;
-                }
-            }
-
-            // Node not found, create a new node and link it
-            HashNode *newNode = new HashNode(key, 1);
-            newNode->next = slot;
-            slot = newNode;
-        }
-
-        // Increase the size after successfully adding a new node
-        currentSize.fetch_add(1, std::memory_order_relaxed);
+        // Increase the size. This is safe since the HashMap is thread-specific.
+        currentSize++;
     }
-
 
     void insertWords(const std::string& words) {
         size_t start = 0;
@@ -171,8 +109,7 @@ public:
 
         while (end != std::string::npos) {
             std::string word = words.substr(start, end - start);
-            index = hashFunction(word);
-            insert(word, index);
+           this->insert(word);
 
             // Update start and end for the next word
             start = end + 1;
@@ -181,8 +118,7 @@ public:
 
         // Insert the last word (or the only word if there are no spaces)
         std::string lastWord = words.substr(start);
-        index = hashFunction(lastWord);
-        insert(lastWord, index);
+        this->insert( lastWord);
     }
 
 
@@ -195,7 +131,7 @@ public:
         HashNode *node = table[index];
         while (node) {
             if (node->key.compare(key) == 0) {
-                return node->value.load();  // Key found, return value
+                return node->value;  // Key found, return value
             }
             node = node->next;
         }
@@ -215,6 +151,7 @@ public:
     explicit WordCount(std::string  w, int c) : word(std::move(w)), count(c) {}
 
 };
+
 
 string normalizeWord(const string &word) {
     string normalized;
@@ -315,83 +252,123 @@ long getFileLength(ifstream& file) {
     return length; // Return the length of the file
 }
 
-void dispatchThreads(int numThreads, const string& fileName, HashMap &wordCount) {
-    if (numThreads == 1) {
-        // Perform the operation in the main thread without creating new threads
-        ifstream file(fileName);
-        string word;
-        string segment;
-        while (file >> word) {
-            segment += normalizeWord(word) + " ";
+int estimateHashMapSize(ifstream& file) {
+    long fileSize = getFileLength(file);
+    if (fileSize == -1) return -1; // File open error
+
+    const int averageWordSize = 5; // Average word size in characters (a rough guess)
+    long totalWords = fileSize / averageWordSize; // Estimate total words
+    double uniqueFactor = 0.2; // Assume 20% of words are unique, adjust based on expected data
+    int hashMapSize = static_cast<int>(totalWords * uniqueFactor);
+
+    return hashMapSize > 100 ? hashMapSize : 100; // Ensure a minimum size for the HashMap
+}
+
+void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
+    for (int i = 0; i < threadTable.tableSize; ++i) {
+        HashNode* threadNode = threadTable.table[i];
+        while (threadNode != nullptr) {
+            // Lock the bucket for thread safety
+            std::lock_guard<std::mutex> lock(mainTable.bucketMutexes[mainTable.getSegmentIndex(mainTable.hashFunction(threadNode->key))]);
+
+            // Insert or update the node in the main table
+            HashNode** mainNodePtr = &mainTable.table[mainTable.hashFunction(threadNode->key)];
+            while (*mainNodePtr != nullptr && (*mainNodePtr)->key != threadNode->key) {
+                mainNodePtr = &((*mainNodePtr)->next);
+            }
+
+            if (*mainNodePtr == nullptr) {
+                // Key not found in the main table, insert a new node
+                *mainNodePtr = new HashNode(threadNode->key, threadNode->value);
+            } else {
+                // Key found, update the value
+                (*mainNodePtr)->value += threadNode->value;
+            }
+
+            // Move to the next node in the thread-specific table
+            threadNode = threadNode->next;
         }
-        wordCount.insertWords(segment);
-    } else {
-        numThreads--;
-        thread *threads = new thread[numThreads];
-        ifstream file(fileName); // Open the file to get its length
-        long length = getFileLength(file);
-        file.close(); // Close the initial file stream
-
-        long chunkSize = length / numThreads; // Basic chunk size for each thread
-
-        for (int i = 0; i < numThreads; i++) {
-            // Calculate start and end positions for each thread
-            long startPos = i * chunkSize;
-            long endPos = (i < numThreads - 1) ? (startPos + chunkSize) : length;
-
-            threads[i] = thread([=, &wordCount]() {
-                ifstream threadFile(fileName); // Open a new file stream for each thread
-                threadFile.seekg(startPos); // Seek to the start position
-
-                string word;
-                string segment;
-                bool firstWord = true;
-                long currentPosition = startPos;
-
-                // Read until the end position or the end of the file
-                while (currentPosition < endPos && threadFile >> word) {
-                    if (!word.empty() && isalpha(word[0])) {
-                        if (!firstWord) {
-                            segment += " "; // Add a space before all but the first word
-                        }
-                        firstWord = false;
-                        segment += normalizeWord(word);
-                    }
-                    currentPosition = threadFile.tellg();
-                }
-
-                // If not at the end of the file, read the rest of the current word
-                if (currentPosition < length) {
-                    char c;
-                    while (threadFile.get(c) && isalpha(c)) {
-                        segment += tolower(c);
-                    }
-                }
-
-                wordCount.insertWords(segment); // Process the segment
-            });
-        }
-
-        // Wait for all threads to finish
-        for (int i = 0; i < numThreads; i++) {
-            threads[i].join();
-        }
-
-        delete[] threads; // Clean up the dynamically allocated thread array
     }
 }
 
+void dispatchThreads(int numThreads, const string& fileName, HashMap &mainTable) {
+    thread *threads = new thread[numThreads];
+    HashMap **threadTables = new HashMap*[numThreads]; // Array of pointers to HashMaps
+    ifstream file(fileName);
+    if (!file.is_open()) {
+        cerr << "Failed to open file: " << fileName << endl;
+        return;
+    }
+    long length = getFileLength(file);
+    long chunkSize = length / numThreads;
+    long startPos = 0;
+    long endPos = 0;
+
+    for (int i = 0; i < numThreads; i++) {
+        startPos = endPos; // Start from the previous end position
+        if (i < numThreads - 1) {
+            endPos = startPos + chunkSize;
+            file.seekg(endPos); // Move to the end position of the current chunk
+            char c;
+            // Read ahead to find the next space or end of file
+            while (file.get(c) && c != ' ' && endPos < length) {
+                ++endPos;
+            }
+        } else {
+            endPos = length; // Last chunk goes to the end of the file
+        }
+
+        // Each thread gets its own copy of endPos to avoid overlap
+        long threadEndPos = endPos;
+        threadTables[i] = new HashMap(estimateHashMapSize(file));
+
+        threads[i] = thread([startPos, threadEndPos, &fileName, threadTable = threadTables[i]]() {
+            ifstream threadFile(fileName);
+            threadFile.seekg(startPos);
+            string segment;
+            string word;
+            // Read until the designated end position for the thread
+            while (threadFile.tellg() < threadEndPos && threadFile >> word) {
+                if (!segment.empty()) segment += " ";
+                segment += normalizeWord(word);
+            }
+            threadTable->insertWords(segment);
+        });
+
+        // Prepare for the next chunk
+        endPos++;
+    }
+
+    // Wait for all threads to complete
+    for (int i = 0; i < numThreads; ++i) {
+        threads[i].join();
+    }
+
+    // Merge thread results into the main table
+    for (int i = 0; i < numThreads; ++i) {
+        mergeResults(mainTable, *threadTables[i]);
+        delete threadTables[i]; // Clean up
+    }
+
+    delete[] threads;
+    delete[] threadTables;
+}
+
 int main() {
-    HashMap wordCount(10000); // Start with an initial size
     string fileName = "Bible.txt";
+    int numThreads = 16;
     ifstream inputFile(fileName);
-    cout << "Using 1 thread"  << endl;
+
+    cout << "Using " << numThreads<<  " thread"  << endl;
 
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
         return 1;
     }
-    dispatchThreads(1, "Bible.txt", wordCount);
+    int hashMapSize = estimateHashMapSize(inputFile);
+    //cout << "HashMap size: " << hashMapSize << endl;
+    HashMap wordCount(hashMapSize); // Start with an initial size
+    dispatchThreads(numThreads, "Bible.txt", wordCount);
 
     outputHashMap(wordCount, "output.txt");
 
