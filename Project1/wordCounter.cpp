@@ -11,20 +11,23 @@ using namespace std;
 class HashNode {
 public:
     string key;
-    std::atomic<short> value;  // Make 'value' atomic
+    std::atomic<long> value;  // Make 'value' atomic
     HashNode *next;
 
     //rather than making a copy of a copy, move the copy to the parameter to reduce memory usage
-    HashNode(string key, short value) : key(std::move(key)), value(value), next(nullptr) {}
+    HashNode(string key, long value) : key(std::move(key)), value(value), next(nullptr) {}
 };
 
 class HashMap {
 private:
-    float threshold = 0.75;
-    short maxSize;
-    atomic<short> currentSize{0};  // Make 'currentSize' atomic and directly initialize
-    mutex mutex;
+    float threshold = 0.8;
+    long maxSize;
+    atomic<long> currentSize{0};  // Make 'currentSize' atomic and directly initialize
+    mutex globalMutex;
     std::mutex* bucketMutexes;
+    int segmentSize = 1000;
+    int mutexCount;
+
 
 
     int hashFunction(const string &key) const {
@@ -44,6 +47,9 @@ private:
         }
         return static_cast<int>(index % tableSize);
     }
+    size_t getSegmentIndex(size_t bucketIndex) const {
+        return bucketIndex / segmentSize;
+    }
 
 
 public:
@@ -52,9 +58,10 @@ public:
 
     explicit HashMap(int size) {
         tableSize = size;
-        maxSize = (short) (tableSize * threshold);
+        maxSize = (long) (tableSize * threshold);
         table = new HashNode*[tableSize];
-        bucketMutexes = new std::mutex[tableSize];  // Allocate array of mutexes
+        mutexCount = (tableSize + segmentSize - 1) / segmentSize; // Ceiling division
+        bucketMutexes = new std::mutex[mutexCount];  // Allocate array of mutexes
 
 
         //initialize all fields to null
@@ -77,67 +84,85 @@ public:
 
     }
 
-    void rehashInsert(const string &key, short count) {
-        int index = hashFunction(key);
-        HashNode *currentNode = table[index];
-        HashNode *previousNode = nullptr;
-
-        while (currentNode != nullptr) {
-            if (currentNode->key == key) {
-                currentNode->value = count;
-                return;
-            }
-            previousNode = currentNode;
-            currentNode = currentNode->next;
-        }
-
-        HashNode *newNode = new HashNode(key, count);
-
-        if (previousNode == nullptr) {
-            table[index] = newNode;
-        } else {
-            previousNode->next = newNode;
-        }
+    void rehashInsert(HashNode* node) {
+        int index = hashFunction(node->key);
+        node->next = table[index]; // Directly link the existing node to the start of the list
+        table[index] = node; // Make the node the new head of the list at index
     }
+    void resize() {
+        int newTableSize = tableSize * 2;
+        auto newTable = new HashNode*[newTableSize]();
+        int newMutexCount = (newTableSize + segmentSize - 1) / segmentSize;
+        auto newBucketMutexes = new std::mutex[newMutexCount];
+        std::fill(newTable, newTable + newTableSize, nullptr);
+
+        // Temporarily save the old table information
+        HashNode** oldTable = table;
+        int oldTableSize = tableSize;
+
+        std::mutex* oldBucket = bucketMutexes;
+        bucketMutexes = new std::mutex[tableSize];
+
+        // Update the hash map to use the new table
+        table = newTable;
+        tableSize = newTableSize;
+        maxSize = static_cast<long>(threshold * tableSize);
+
+        // Iterate through the old table and rehash each node
+        for (int i = 0; i < oldTableSize; ++i) {
+            HashNode* currentNode = oldTable[i];
+            while (currentNode != nullptr) {
+                HashNode* nextNode = currentNode->next; // Temporarily save the next node
+                currentNode->next = nullptr; // Disconnect the current node from the list
+                rehashInsert(currentNode); // Rehash the current node into the new table
+                currentNode = nextNode; // Move to the next node in the old list
+            }
+        }
+
+        delete[] oldTable;
+        delete[] bucketMutexes; // Delete the old mutex array
+        bucketMutexes = newBucketMutexes; // Use the new mutex array
+    }
+
 
     void insert(const string &key, const int &loc) {
-        int index = loc;
-        if(!key.empty()) {
-            cout << "Word to insert: " << key << endl;
-            cout << "Loc: " << index << endl;
-            //see if a resize is needed
-            if (currentSize >= maxSize) {
-                std::lock_guard<std::mutex> lock(mutex);
-                resize();
-                index = hashFunction(key);
-                cout << "resized index: " << index << endl;
-            }
-            std::lock_guard<std::mutex> lock(bucketMutexes[index]);
-            short count = get(key) + 1;
-            HashNode *currentNode = table[index];
-            HashNode *previousNode = nullptr;
+        if (key.empty()) return; // Early exit if the key is empty
 
-            while (currentNode != nullptr) {
+        int index = loc;
+
+        // First check to potentially avoid locking
+        if (currentSize.load(std::memory_order_relaxed) >= maxSize) {
+            std::lock_guard<std::mutex> lock(globalMutex);
+            if (currentSize.load(std::memory_order_relaxed) >= maxSize) { // Double-check pattern
+                resize(); // This may be optimized to avoid resizing too often
+                index = hashFunction(key); // Only rehash if resize occurred
+            }
+        }
+
+        size_t segmentIndex = getSegmentIndex(index);
+       // cout << "Word: " << key << " Index: " << index << endl;
+
+        // cout << "Segment index: " << segmentIndex << endl;
+        {
+            std::lock_guard<std::mutex> lock(bucketMutexes[segmentIndex]);
+            HashNode *&slot = table[index];
+            for (HashNode *currentNode = slot; currentNode; currentNode = currentNode->next) {
                 if (currentNode->key == key) {
-                    currentNode->value = count;
+                    currentNode->value.fetch_add(1, std::memory_order_relaxed);
                     return;
                 }
-                previousNode = currentNode;
-                currentNode = currentNode->next;
             }
 
-            //node not found in map already, must make new node
-            HashNode *newNode = new HashNode(key, ++count);
-
-            if (previousNode == nullptr) {
-                table[index] = newNode;
-            } else {
-
-                previousNode->next = newNode;
-            }
-            ++currentSize;
+            // Node not found, create a new node and link it
+            HashNode *newNode = new HashNode(key, 1);
+            newNode->next = slot;
+            slot = newNode;
         }
+
+        // Increase the size after successfully adding a new node
+        currentSize.fetch_add(1, std::memory_order_relaxed);
     }
+
 
     void insertWords(const std::string& words) {
         size_t start = 0;
@@ -161,55 +186,29 @@ public:
     }
 
 
-    short get(const string &key) {
+    long get(const string &key) {
 
         // Compute the hash code and find the corresponding bucket index
         int index = hashFunction(key) % tableSize;
 
         // Search for the key in the linked list at the computed index
         HashNode *node = table[index];
-        while (node != nullptr) {
-            if (node->key == key) {
-                return node->value;  // Key found, return value
+        while (node) {
+            if (node->key.compare(key) == 0) {
+                return node->value.load();  // Key found, return value
             }
             node = node->next;
         }
-
         // Key not found, return a default value
         return -1;
     }
 
-    void resize() {
-        cout << "resizing!" << endl;
-        int oldTableSize = tableSize;
-        HashNode **oldTable = table;
-        tableSize *= 2;
-        maxSize = (short) (tableSize * threshold);
-        table = new HashNode*[tableSize];
-        std::mutex* oldBucket = bucketMutexes;
-        bucketMutexes = new std::mutex[tableSize];
-
-        fill(table, table + tableSize, nullptr);
-
-        for (int i = 0; i < oldTableSize; ++i) {
-            HashNode *oldNode = oldTable[i];
-            while (oldNode != nullptr) {
-                rehashInsert(oldNode->key, oldNode->value);
-                HashNode *temp = oldNode;
-                oldNode = oldNode->next;
-                delete(temp);
-
-            }
-        }
-        delete[] oldTable;
-        delete[] oldBucket;
-    }
 };
 
 class WordCount {
 public:
     string word;
-    short count;
+    long count;
     WordCount* words[];
 
     WordCount() : word(""), count(0) {}
@@ -316,53 +315,83 @@ long getFileLength(ifstream& file) {
     return length; // Return the length of the file
 }
 
-void dispatchThreads(int numThreads, ifstream& file, HashMap &wordCount) {
-    thread* threads = new thread[numThreads];
-    long leng = getFileLength(file);
-    string word;
-    bool firstWord = true;
-    for(int i = numThreads; i > 0; i--) {
-        int count = 0;
-        int chunkSize = leng / i;
-        long end = (long)file.tellg() + chunkSize;
+void dispatchThreads(int numThreads, const string& fileName, HashMap &wordCount) {
+    if (numThreads == 1) {
+        // Perform the operation in the main thread without creating new threads
+        ifstream file(fileName);
+        string word;
         string segment;
-        cout << "Thread #" << i << " ";
-        cout << "starting loc: " << file.tellg() << " ";
-        while (file >> word && (long)file.tellg() < end) {
-            if (!word.empty() && isalpha(word[0])) {
-                if (!firstWord) {
-                    segment += " ";  // Add a space before all but the first word
-                }
-                firstWord = false;
-                segment += normalizeWord(word);
-            }
+        while (file >> word) {
+            segment += normalizeWord(word) + " ";
         }
-        cout << "ending loc: " << file.tellg() << endl;
-        threads[i - 1] = thread([&wordCount, segment]() {
-            wordCount.insertWords(segment);
-        });
+        wordCount.insertWords(segment);
+    } else {
+        numThreads--;
+        thread *threads = new thread[numThreads];
+        ifstream file(fileName); // Open the file to get its length
+        long length = getFileLength(file);
+        file.close(); // Close the initial file stream
 
-        leng -= chunkSize;
-    }
+        long chunkSize = length / numThreads; // Basic chunk size for each thread
 
-    // Wait for all threads to finish
-    for (int i = 0; i < numThreads; i++) {
-        threads[i].join();
+        for (int i = 0; i < numThreads; i++) {
+            // Calculate start and end positions for each thread
+            long startPos = i * chunkSize;
+            long endPos = (i < numThreads - 1) ? (startPos + chunkSize) : length;
+
+            threads[i] = thread([=, &wordCount]() {
+                ifstream threadFile(fileName); // Open a new file stream for each thread
+                threadFile.seekg(startPos); // Seek to the start position
+
+                string word;
+                string segment;
+                bool firstWord = true;
+                long currentPosition = startPos;
+
+                // Read until the end position or the end of the file
+                while (currentPosition < endPos && threadFile >> word) {
+                    if (!word.empty() && isalpha(word[0])) {
+                        if (!firstWord) {
+                            segment += " "; // Add a space before all but the first word
+                        }
+                        firstWord = false;
+                        segment += normalizeWord(word);
+                    }
+                    currentPosition = threadFile.tellg();
+                }
+
+                // If not at the end of the file, read the rest of the current word
+                if (currentPosition < length) {
+                    char c;
+                    while (threadFile.get(c) && isalpha(c)) {
+                        segment += tolower(c);
+                    }
+                }
+
+                wordCount.insertWords(segment); // Process the segment
+            });
+        }
+
+        // Wait for all threads to finish
+        for (int i = 0; i < numThreads; i++) {
+            threads[i].join();
+        }
+
+        delete[] threads; // Clean up the dynamically allocated thread array
     }
-    delete[] threads; // Cleanup
 }
 
-
 int main() {
-    HashMap wordCount(100); // Start with an initial size
-    string fileName = "input.txt";
+    HashMap wordCount(10000); // Start with an initial size
+    string fileName = "Bible.txt";
     ifstream inputFile(fileName);
+    cout << "Using 1 thread"  << endl;
 
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
         return 1;
     }
-    dispatchThreads(17, inputFile, wordCount);
+    dispatchThreads(1, "Bible.txt", wordCount);
 
     outputHashMap(wordCount, "output.txt");
 

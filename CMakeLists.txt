@@ -4,4 +4,5 @@ project(ParallelProcessing)
 set(CMAKE_CXX_STANDARD 14)
 
 add_executable(ParallelProcessing
-        Project1/wordCounter.cpp)
+        Project1/wordCounter.cpp
+)
