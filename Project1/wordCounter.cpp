@@ -10,7 +10,7 @@ class HashNode {
 public:
     string key;
     long value;
-    HashNode *next;
+    HashNode* next;
 
     //rather than making a copy of a copy, move the copy to the parameter to reduce memory usage
     HashNode(string key, long value) : key(std::move(key)), value(value), next(nullptr) {}
@@ -26,14 +26,14 @@ private:
 
 
 public:
-    HashNode **table;
+    HashNode** table;
     int tableSize;
     std::mutex* bucketMutexes;
 
     explicit HashMap(int size) {
         tableSize = size;
-        maxSize = (long) (tableSize * threshold);
-        table = new HashNode*[tableSize];
+        maxSize = (long)(tableSize * threshold);
+        table = new HashNode * [tableSize];
         mutexCount = (tableSize + segmentSize - 1) / segmentSize; // Ceiling division
         bucketMutexes = new std::mutex[mutexCount];  // Allocate array of mutexes
 
@@ -44,9 +44,9 @@ public:
     // Destructor to prevent memory leaks
     ~HashMap() {
         for (int i = 0; i < tableSize; ++i) {
-            HashNode *node = table[i];
+            HashNode* node = table[i];
             while (node != nullptr) {
-                HashNode *temp = node;
+                HashNode* temp = node;
                 node = node->next;
                 //free(temp);
                 delete(temp);
@@ -58,13 +58,13 @@ public:
 
     }
 
-    int hashFunction(const string &key) const {
+    int hashFunction(const string& key) const {
         const short p = 31;  // Prime number used as base
         const int m = 1e9 + 9;  // Large prime number for modulo operation
         long hashValue = 0;
         long p_pow = 1;
 
-        for (char c: key) {
+        for (char c : key) {
             hashValue = (hashValue + (c - 'a' + 1) * p_pow) % m;
             p_pow = (p_pow * p) % m;
         }
@@ -79,7 +79,7 @@ public:
         return bucketIndex / segmentSize;
     }
 
-    void insert(const string &key) {
+    void insert(const string& key) {
         if (key.empty()) return; // Early exit if the key is empty
 
         int index = hashFunction(key);
@@ -109,7 +109,7 @@ public:
 
         while (end != std::string::npos) {
             std::string word = words.substr(start, end - start);
-           this->insert(word);
+            this->insert(word);
 
             // Update start and end for the next word
             start = end + 1;
@@ -118,17 +118,17 @@ public:
 
         // Insert the last word (or the only word if there are no spaces)
         std::string lastWord = words.substr(start);
-        this->insert( lastWord);
+        this->insert(lastWord);
     }
 
 
-    long get(const string &key) {
+    long get(const string& key) {
 
         // Compute the hash code and find the corresponding bucket index
         int index = hashFunction(key) % tableSize;
 
         // Search for the key in the linked list at the computed index
-        HashNode *node = table[index];
+        HashNode* node = table[index];
         while (node) {
             if (node->key.compare(key) == 0) {
                 return node->value;  // Key found, return value
@@ -153,20 +153,21 @@ public:
 };
 
 
-string normalizeWord(const string &word) {
+string normalizeWord(const string& word) {
     string normalized;
-    for (char ch: word) {
-        if (isalpha(ch) || ch == '-') {
-            normalized += tolower(ch);
-        }
+    for (char ch : word) {
+        if(ch >= 0)
+            if (isalpha(ch) || ch == '-') {
+                normalized += tolower(ch);
+            }
     }
     return normalized;
 }
 
-int countWords(HashNode **table, int tableSize) {
+int countWords(HashNode** table, int tableSize) {
     int count = 0;
-    for(int i = 0; i < tableSize; ++i) {
-        for(HashNode* node = table[i]; node != nullptr; node = node->next) {
+    for (int i = 0; i < tableSize; ++i) {
+        for (HashNode* node = table[i]; node != nullptr; node = node->next) {
             ++count;
         }
     }
@@ -174,68 +175,84 @@ int countWords(HashNode **table, int tableSize) {
 }
 //used for quick sort
 int compareWordCount(const void* a, const void* b) {
-    const WordCount *wordA = static_cast<const WordCount*>(a);
-    const WordCount *wordB = static_cast<const WordCount*>(b);
+    const WordCount* wordA = static_cast<const WordCount*>(a);
+    const WordCount* wordB = static_cast<const WordCount*>(b);
     return wordB->count - wordA->count; // Descending order
 }
 
-void swap(WordCount* a, WordCount* b) {
-    WordCount t = *a;
-    *a = *b;
-    *b = t;
-}
+void merge(WordCount** arr, int low, int mid, int high) {
+    int n1 = mid - low + 1;
+    int n2 = high - mid;
 
-int partition(WordCount* arr, int low, int high) {
-    WordCount pivot = arr[high];
-    int i = (low - 1);
+    WordCount** L = new WordCount * [n1];
+    WordCount** R = new WordCount * [n2];
 
-    for (int j = low; j <= high - 1; j++) {
-        // If current element is larger than or equal to the pivot
-        if (arr[j].count >= pivot.count) {
-            i++;    // increment index of smaller element
-            swap(&arr[i], &arr[j]);
+    for (int i = 0; i < n1; ++i) {
+        L[i] = arr[low + i];
+    }
+    for (int j = 0; j < n2; ++j) {
+        R[j] = arr[mid + 1 + j];
+    }
+
+    int i = 0, j = 0, k = low;
+    while (i < n1 && j < n2) {
+        if (L[i]->count >= R[j]->count) {
+            arr[k++] = L[i++];
+        }
+        else {
+            arr[k++] = R[j++];
         }
     }
-    swap(&arr[i + 1], &arr[high]);
-    return (i + 1);
+
+    while (i < n1) {
+        arr[k++] = L[i++];
+    }
+    while (j < n2) {
+        arr[k++] = R[j++];
+    }
+
+    delete[] L;
+    delete[] R;
 }
 
-void quickSort(WordCount* arr, int low, int high) {
+void mergeSort(WordCount** arr, int low, int high) {
     if (low < high) {
-        int pivotIndex = partition(arr, low, high);
-
-        // Recursively apply the same logic to the left and right subarrays
-        quickSort(arr, low, pivotIndex - 1);
-        quickSort(arr, pivotIndex + 1, high);
+        int mid = low + (high - low) / 2;
+        mergeSort(arr, low, mid);
+        mergeSort(arr, mid + 1, high);
+        merge(arr, low, mid, high);
     }
 }
-
 void outputHashMap(HashMap& hashMap, const string& filename) {
     int totalWords = countWords(hashMap.table, hashMap.tableSize);
-    WordCount* wordCounts = new WordCount[totalWords];
+    WordCount** wordCounts = new WordCount * [totalWords];
 
     int index = 0;
 
     for (int i = 0; i < hashMap.tableSize; ++i) {
         HashNode* node = hashMap.table[i];
         while (node != nullptr) {
-            wordCounts[index++] = WordCount(node->key, node->value);
+            wordCounts[index++] = new WordCount(node->key, node->value);
             node = node->next;
         }
     }
-
+    //cout << "sorting!" << endl;
     // Corrected call to quickSort
-    quickSort(wordCounts, 0, totalWords - 1);
+    mergeSort(wordCounts, 0, totalWords - 1);
 
     // Output to file
     ofstream outFile(filename);
     for (int i = 0; i < totalWords; ++i) {
-        outFile << wordCounts[i].word << ": " << wordCounts[i].count << endl;
+        outFile << wordCounts[i]->word << ": " << wordCounts[i]->count << endl; // Dereference pointers when accessing WordCount objects
     }
 
     outFile.close();
-    delete[] wordCounts; // Cleanup
 
+    // Cleanup: deallocate memory for WordCount objects
+    for (int i = 0; i < totalWords; ++i) {
+        delete wordCounts[i];
+    }
+    delete[] wordCounts;
 }
 
 long getFileLength(ifstream& file) {
@@ -280,7 +297,8 @@ void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
             if (*mainNodePtr == nullptr) {
                 // Key not found in the main table, insert a new node
                 *mainNodePtr = new HashNode(threadNode->key, threadNode->value);
-            } else {
+            }
+            else {
                 // Key found, update the value
                 (*mainNodePtr)->value += threadNode->value;
             }
@@ -291,9 +309,9 @@ void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
     }
 }
 
-void dispatchThreads(int numThreads, const string& fileName, HashMap &mainTable) {
-    thread *threads = new thread[numThreads];
-    HashMap **threadTables = new HashMap*[numThreads]; // Array of pointers to HashMaps
+void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable) {
+    thread* threads = new thread[numThreads];
+    HashMap** threadTables = new HashMap * [numThreads]; // Array of pointers to HashMaps
     ifstream file(fileName);
     if (!file.is_open()) {
         cerr << "Failed to open file: " << fileName << endl;
@@ -314,7 +332,8 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap &mainTable)
             while (file.get(c) && c != ' ' && endPos < length) {
                 ++endPos;
             }
-        } else {
+        }
+        else {
             endPos = length; // Last chunk goes to the end of the file
         }
 
@@ -356,10 +375,10 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap &mainTable)
 
 int main() {
     string fileName = "Bible.txt";
-    int numThreads = 16;
+    int numThreads = 10;
     ifstream inputFile(fileName);
 
-    cout << "Using " << numThreads<<  " thread"  << endl;
+    cout << "Using " << numThreads << " thread" << endl;
 
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
