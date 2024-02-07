@@ -15,7 +15,7 @@ public:
     //rather than making a copy of a copy, move the copy to the parameter to reduce memory usage
     HashNode(string key, long value) : key(std::move(key)), value(value), next(nullptr) {}
 };
-
+int collisions = 0;
 class HashMap {
 private:
     float threshold = 0.8;
@@ -50,31 +50,23 @@ public:
                 node = node->next;
                 //free(temp);
                 delete(temp);
-
             }
         }
         delete[] table;
         delete[] bucketMutexes;
-
     }
 
-    int hashFunction(const string& key) const {
-        const short p = 31;  // Prime number used as base
-        const int m = 1e9 + 9;  // Large prime number for modulo operation
-        long hashValue = 0;
-        long p_pow = 1;
-
+    //FNV-1a Hash Function
+    unsigned long hashFunction(const string& key) const {
+        const unsigned long fnv_prime = 0x811C9DC5;
+        unsigned long hash = 0;
         for (char c : key) {
-            hashValue = (hashValue + (c - 'a' + 1) * p_pow) % m;
-            p_pow = (p_pow * p) % m;
+            hash ^= c;
+            hash *= fnv_prime;
         }
-
-        long index = hashValue % m; // Calculate modulo with m
-        if (index < 0) {
-            index += m; // Ensure index is positive
-        }
-        return static_cast<int>(index % tableSize);
+        return hash % tableSize;
     }
+
     size_t getSegmentIndex(size_t bucketIndex) const {
         return bucketIndex / segmentSize;
     }
@@ -86,7 +78,13 @@ public:
 
         // Directly access this HashMap's table
         HashNode** slot = &table[index];
+        int i = 0;
         for (HashNode* currentNode = *slot; currentNode; currentNode = currentNode->next) {
+            i++;
+            if (i > 1) {
+                //cout << "there was a collision!";
+                collisions++;
+            }
             if (currentNode->key == key) {
                 currentNode->value++; // Since it's thread-specific, no need for atomic
                 return;
@@ -374,11 +372,11 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable)
 }
 
 int main() {
-    string fileName = "Bible.txt";
-    int numThreads = 10;
+    string fileName = "hello_repeated.txt";
+    int numThreads = 32;
     ifstream inputFile(fileName);
-
-    cout << "Using " << numThreads << " thread" << endl;
+    cout << "File Name: " << fileName << endl;
+    cout << "Using " << numThreads << ((numThreads > 1 ) ? " threads" : " thread") << endl;
 
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
@@ -387,8 +385,8 @@ int main() {
     int hashMapSize = estimateHashMapSize(inputFile);
     //cout << "HashMap size: " << hashMapSize << endl;
     HashMap wordCount(hashMapSize); // Start with an initial size
-    dispatchThreads(numThreads, "Bible.txt", wordCount);
-
+    dispatchThreads(numThreads, fileName, wordCount);
+    cout << "There were " << collisions << " collisions!" << endl;
     outputHashMap(wordCount, "output.txt");
 
     return 0;
