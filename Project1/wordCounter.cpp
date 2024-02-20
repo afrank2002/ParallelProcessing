@@ -18,12 +18,9 @@ public:
 int collisions = 0;
 class HashMap {
 private:
-    float threshold = 0.8;
-    long maxSize;
     long currentSize = 0;
     int segmentSize = 1000;
     int mutexCount;
-
 
 public:
     HashNode** table;
@@ -32,7 +29,6 @@ public:
 
     explicit HashMap(int size) {
         tableSize = size;
-        maxSize = (long)(tableSize * threshold);
         table = new HashNode * [tableSize];
         mutexCount = (tableSize + segmentSize - 1) / segmentSize; // Ceiling division
         bucketMutexes = new std::mutex[mutexCount];  // Allocate array of mutexes
@@ -143,7 +139,6 @@ class WordCount {
 public:
     string word;
     long count;
-    WordCount* words[];
 
     WordCount() : word(""), count(0) {}
     explicit WordCount(std::string  w, int c) : word(std::move(w)), count(c) {}
@@ -170,12 +165,6 @@ int countWords(HashNode** table, int tableSize) {
         }
     }
     return count;
-}
-//used for quick sort
-int compareWordCount(const void* a, const void* b) {
-    const WordCount* wordA = static_cast<const WordCount*>(a);
-    const WordCount* wordB = static_cast<const WordCount*>(b);
-    return wordB->count - wordA->count; // Descending order
 }
 
 void merge(WordCount** arr, int low, int mid, int high) {
@@ -372,12 +361,11 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable)
 }
 
 int main() {
-    string fileName = "hello_repeated.txt";
-    int numThreads = 32;
+    int numThreads = 8;
+    string fileName = "sherlock_holmes.txt";
     ifstream inputFile(fileName);
     cout << "File Name: " << fileName << endl;
     cout << "Using " << numThreads << ((numThreads > 1 ) ? " threads" : " thread") << endl;
-
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
         return 1;
