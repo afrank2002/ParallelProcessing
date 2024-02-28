@@ -16,21 +16,14 @@ public:
 };
 int collisions = 0;
 class HashMap {
-private:
-    long currentSize = 0;
-    int segmentSize = 1000;
-    int mutexCount;
 
 public:
     HashNode** table;
-    int tableSize;
-    std::mutex* bucketMutexes;
+    unsigned long tableSize;
 
-    explicit HashMap(int size) {
+    explicit HashMap(unsigned long size) {
         tableSize = size;
         table = new HashNode * [tableSize];
-        mutexCount = (tableSize + segmentSize - 1) / segmentSize; // Ceiling division
-        bucketMutexes = new std::mutex[mutexCount];  // Allocate array of mutexes
 
 
         //initialize all fields to null
@@ -43,12 +36,10 @@ public:
             while (node != nullptr) {
                 HashNode* temp = node;
                 node = node->next;
-                //free(temp);
                 delete(temp);
             }
         }
         delete[] table;
-        delete[] bucketMutexes;
     }
 
     //FNV-1a Hash Function
@@ -62,14 +53,11 @@ public:
         return hash % tableSize;
     }
 
-    size_t getSegmentIndex(size_t bucketIndex) const {
-        return bucketIndex / segmentSize;
-    }
 
-    void insert(const string& key) {
+    void insert(const string& key) const {
         if (key.empty()) return; // Early exit if the key is empty
 
-        int index = hashFunction(key);
+        unsigned long index = hashFunction(key);
 
         // Directly access this HashMap's table
         HashNode** slot = &table[index];
@@ -87,15 +75,14 @@ public:
         }
 
         // Node not found, create a new node and link it
-        HashNode* newNode = new HashNode(key, 1);
+        auto* newNode = new HashNode(key, 1);
         newNode->next = *slot;
         *slot = newNode;
 
         // Increase the size. This is safe since the HashMap is thread-specific.
-        currentSize++;
     }
 
-    void insertWords(const std::string& words) {
+    void insertWords(const std::string& words) const {
         size_t start = 0;
         size_t end = words.find(' ');
         int index;
@@ -118,12 +105,12 @@ public:
     long get(const string& key) {
 
         // Compute the hash code and find the corresponding bucket index
-        int index = hashFunction(key) % tableSize;
+        unsigned long index = hashFunction(key) % tableSize;
 
         // Search for the key in the linked list at the computed index
         HashNode* node = table[index];
         while (node) {
-            if (node->key.compare(key) == 0) {
+            if (node->key == key) {
                 return node->value;  // Key found, return value
             }
             node = node->next;
@@ -210,8 +197,8 @@ void mergeSort(WordCount** arr, int low, int high) {
     }
 }
 void outputHashMap(HashMap& hashMap, const string& filename) {
-    int totalWords = countWords(hashMap.table, hashMap.tableSize);
-    WordCount** wordCounts = new WordCount * [totalWords];
+    unsigned long totalWords = countWords(hashMap.table, hashMap.tableSize);
+    auto** wordCounts = new WordCount * [totalWords];
 
     int index = 0;
 
@@ -255,7 +242,7 @@ long getFileLength(ifstream& file) {
     return length; // Return the length of the file
 }
 
-int estimateHashMapSize(ifstream& file) {
+unsigned long estimateHashMapSize(ifstream& file) {
     long fileSize = getFileLength(file);
     if (fileSize == -1) return -1; // File open error
 
@@ -267,9 +254,9 @@ int estimateHashMapSize(ifstream& file) {
     return hashMapSize > 100 ? hashMapSize : 100; // Ensure a minimum size for the HashMap
 }
 
-void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
-    for (int i = 0; i < threadTable.tableSize; ++i) {
-        HashNode* threadNode = threadTable.table[i];
+void mergeResults(HashMap& mainTable, HashMap* threadTable) {
+    for (int i = 0; i < threadTable->tableSize; ++i) {
+        HashNode* threadNode = threadTable->table[i];
         while (threadNode != nullptr) {
             // Lock the bucket for thread safety
 
@@ -285,8 +272,8 @@ void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
             }
             else {
                 // Key found, update the value
-                  #pragma omp atomic
-                  (*mainNodePtr)->value += threadNode->value;
+#pragma omp atomic
+                (*mainNodePtr)->value += threadNode->value;
             }
 
             // Move to the next node in the thread-specific table
@@ -295,73 +282,94 @@ void mergeResults(HashMap& mainTable, const HashMap& threadTable) {
     }
 }
 
-void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable) {
-    omp_set_num_threads(numThreads);
-
-    HashMap** threadTables = new HashMap * [numThreads]; // Array of pointers to HashMaps
-    ifstream file(fileName);
-    if (!file.is_open()) {
-        cerr << "Failed to open file: " << fileName << endl;
-        return;
+unsigned long findEnd(int threadNum, unsigned long start, unsigned long chunkSize, int numThreads, unsigned long length,  ifstream &file) {
+    unsigned long endPos = start + chunkSize;
+    if(threadNum == numThreads - 1)
+    {
+        return length;
     }
-    long length = getFileLength(file);
-    long chunkSize = length / numThreads;
+    else
+    {
+        file.seekg(endPos);
+        char c;
+        while (file.get(c) && c != ' ' && endPos < length) {
+            ++endPos;
+        }
+        return endPos;
+    }
+}
 
-    #pragma omp parallel
+void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable) {
+    ifstream file(fileName);
+
+    //Keep track start and end indices of each thread
+    unsigned long* threadIndices = new unsigned long[numThreads * 2];
+
+    unsigned long length = getFileLength(file);
+    unsigned long chunkSize = length / numThreads;
+    unsigned long threadTableSize = estimateHashMapSize(file)/ numThreads;
+
+    //Variables to be copied per individual thread in parallel section
+    unsigned long start = 0;
+    unsigned long end = 0;
+    HashMap* threadTable; // Array of pointers to HashMaps
+
+    //Compute start and end positions
+    for(int i = 0; i < numThreads; i++) {
+        threadIndices[i*2] = start;
+        end = findEnd(i,start, chunkSize, numThreads, length, file);
+        threadIndices[i*2 + 1] = end;
+        start = end;
+    }
+
+#pragma omp parallel num_threads(numThreads) firstprivate(threadTable, start, end)
     {
         int i = omp_get_thread_num(); // Get the thread index
-        long startPos = i * chunkSize;
-        long endPos = (i == (numThreads - 1)) ? length : (startPos + chunkSize);
+        threadTable = new HashMap(threadTableSize); //independent thread table
 
-        // Make sure to find the end of the last word in the chunk
-        if (i < numThreads - 1) {
-            file.seekg(endPos);
-            char c;
-            while (file.get(c) && c != ' ' && endPos < length) {
-                ++endPos;
-            }
-        }
+        //obtain thread indices
+        start = threadIndices[i * 2];
+        end = threadIndices[i * 2 + 1];
 
-        threadTables[i] = new HashMap(estimateHashMapSize(file));
+        cout << "Thread " << i << ": Start: " << start << " End: " << end << endl;
 
         ifstream threadFile(fileName);
-        threadFile.seekg(startPos);
+        threadFile.seekg(start);
         string segment;
         string word;
 
         // Read until the designated end position for the thread
-        while (threadFile.tellg() < endPos && threadFile >> word) {
+        while (threadFile.tellg() < end && threadFile >> word) {
             if (!segment.empty()) segment += " ";
             segment += normalizeWord(word);
         }
+        threadTable->insertWords(segment);
+        mergeResults(mainTable, threadTable);
 
-        threadTables[i]->insertWords(segment);
+        delete threadTable;
     }
-
-    // Merge thread results into the main table
-    for (int i = 0; i < numThreads; ++i) {
-        mergeResults(mainTable, *threadTables[i]);
-        delete threadTables[i]; // Clean up
-    }
-
-    delete[] threadTables;
+    delete [] threadIndices;
 }
 
 
 int main() {
     cout << "using openMP!" << endl;
-    int numThreads = 8;
-    string fileName = "bible.txt";
+    int numThreads = 12;
+    string fileName = "hello_repeated.txt";
     ifstream inputFile(fileName);
     cout << "File Name: " << fileName << endl;
     cout << "Using " << numThreads << ((numThreads > 1 ) ? " threads" : " thread") << endl;
+
+    //Make sure file is valid
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
         return 1;
     }
-    int hashMapSize = estimateHashMapSize(inputFile);
-    //cout << "HashMap size: " << hashMapSize << endl;
+
+    unsigned long hashMapSize = estimateHashMapSize(inputFile);
+
     HashMap wordCount(hashMapSize); // Start with an initial size
+
     dispatchThreads(numThreads, fileName, wordCount);
     cout << "There were " << collisions << " collisions!" << endl;
     outputHashMap(wordCount, "output.txt");
