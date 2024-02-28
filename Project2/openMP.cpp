@@ -2,134 +2,12 @@
 #include <iostream>
 #include <fstream>
 #include <omp.h>
+#include "HashMap.h"
+#include "HashNode.h"
+#include "WordCount.h"
+
 
 using namespace std;
-
-class HashNode {
-public:
-    string key;
-    long value;
-    HashNode* next;
-
-    //rather than making a copy of a copy, move the copy to the parameter to reduce memory usage
-    HashNode(string key, long value) : key(std::move(key)), value(value), next(nullptr) {}
-};
-int collisions = 0;
-class HashMap {
-
-public:
-    HashNode** table;
-    unsigned long tableSize;
-
-    explicit HashMap(unsigned long size) {
-        tableSize = size;
-        table = new HashNode * [tableSize];
-
-
-        //initialize all fields to null
-        fill(table, table + tableSize, nullptr);
-    }
-    // Destructor to prevent memory leaks
-    ~HashMap() {
-        for (int i = 0; i < tableSize; ++i) {
-            HashNode* node = table[i];
-            while (node != nullptr) {
-                HashNode* temp = node;
-                node = node->next;
-                delete(temp);
-            }
-        }
-        delete[] table;
-    }
-
-    //FNV-1a Hash Function
-    unsigned long hashFunction(const string& key) const {
-        const unsigned long fnv_prime = 0x811C9DC5;
-        unsigned long hash = 0;
-        for (char c : key) {
-            hash ^= c;
-            hash *= fnv_prime;
-        }
-        return hash % tableSize;
-    }
-
-
-    void insert(const string& key) const {
-        if (key.empty()) return; // Early exit if the key is empty
-
-        unsigned long index = hashFunction(key);
-
-        // Directly access this HashMap's table
-        HashNode** slot = &table[index];
-        int i = 0;
-        for (HashNode* currentNode = *slot; currentNode; currentNode = currentNode->next) {
-            i++;
-            if (i > 1) {
-                //cout << "there was a collision!";
-                collisions++;
-            }
-            if (currentNode->key == key) {
-                currentNode->value++;
-                return;
-            }
-        }
-
-        // Node not found, create a new node and link it
-        auto* newNode = new HashNode(key, 1);
-        newNode->next = *slot;
-        *slot = newNode;
-
-        // Increase the size. This is safe since the HashMap is thread-specific.
-    }
-
-    void insertWords(const std::string& words) const {
-        size_t start = 0;
-        size_t end = words.find(' ');
-        int index;
-
-        while (end != std::string::npos) {
-            std::string word = words.substr(start, end - start);
-            this->insert(word);
-
-            // Update start and end for the next word
-            start = end + 1;
-            end = words.find(' ', start);
-        }
-
-        // Insert the last word (or the only word if there are no spaces)
-        std::string lastWord = words.substr(start);
-        this->insert(lastWord);
-    }
-
-
-    long get(const string& key) {
-
-        // Compute the hash code and find the corresponding bucket index
-        unsigned long index = hashFunction(key) % tableSize;
-
-        // Search for the key in the linked list at the computed index
-        HashNode* node = table[index];
-        while (node) {
-            if (node->key == key) {
-                return node->value;  // Key found, return value
-            }
-            node = node->next;
-        }
-        // Key not found, return a default value
-        return -1;
-    }
-
-};
-
-class WordCount {
-public:
-    string word;
-    long count;
-
-    WordCount() : word(""), count(0) {}
-    explicit WordCount(std::string  w, int c) : word(std::move(w)), count(c) {}
-
-};
 
 
 string normalizeWord(const string& word) {
@@ -331,7 +209,7 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable)
         start = threadIndices[i * 2];
         end = threadIndices[i * 2 + 1];
 
-        cout << "Thread " << i << ": Start: " << start << " End: " << end << endl;
+       // cout << "Thread " << i << ": Start: " << start << " End: " << end << endl;
 
         ifstream threadFile(fileName);
         threadFile.seekg(start);
@@ -354,8 +232,8 @@ void dispatchThreads(int numThreads, const string& fileName, HashMap& mainTable)
 
 int main() {
     cout << "using openMP!" << endl;
-    int numThreads = 12;
-    string fileName = "hello_repeated.txt";
+    int numThreads = 20;
+    string fileName = "combined.txt";
     ifstream inputFile(fileName);
     cout << "File Name: " << fileName << endl;
     cout << "Using " << numThreads << ((numThreads > 1 ) ? " threads" : " thread") << endl;
@@ -371,7 +249,6 @@ int main() {
     HashMap wordCount(hashMapSize); // Start with an initial size
 
     dispatchThreads(numThreads, fileName, wordCount);
-    cout << "There were " << collisions << " collisions!" << endl;
     outputHashMap(wordCount, "output.txt");
 
     return 0;

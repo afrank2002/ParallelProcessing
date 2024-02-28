@@ -10,6 +10,9 @@ project(ParallelProcessing)
 # Define the target 'ParallelProcessing' and specify the source files
 add_executable(ParallelProcessing
         Project2/openMP.cpp
+        Project2/HashNode.h
+        Project2/HashMap.h
+        Project2/WordCount.h
 )
 
 # Find the OpenMP package

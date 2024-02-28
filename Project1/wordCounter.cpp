@@ -67,7 +67,7 @@ public:
         return bucketIndex / segmentSize;
     }
 
-    void insert(const string& key) {
+    void insert(const string& key) const {
         if (key.empty()) return; // Early exit if the key is empty
 
         int index = hashFunction(key);
