@@ -1,7 +1,0 @@
-# ninja log v5
-1	151	1709155858520654579	build.ninja	b4daf8076166f671
-7	2742	1709154434481578731	CMakeFiles/ParallelProcessing.dir/Project2/openMP.cpp.o	d07210c9139dde1a
-43	2887	1708451285669754283	CMakeFiles/ParallelProcessing.dir/Project1/wordCounter.cpp.o	b16cfe18b3788971
-2748	3025	1709154434787304724	ParallelProcessing	e9e9210f845bd155
-12	2694	1709156331782944773	CMakeFiles/ParallelProcessing.dir/Project2/openMP.cpp.o	d07210c9139dde1a
-2697	3006	1709156332118903126	ParallelProcessing	e9e9210f845bd155
