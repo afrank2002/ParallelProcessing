@@ -14,6 +14,8 @@ add_executable(ParallelProcessing
         Project2/HashMap.h
         Project2/WordCount.h
         Project2/HashMap.cpp
+        Project2/Utils.h
+        Project2/Utils.cpp
 )
 
 # Find the OpenMP package

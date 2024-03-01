@@ -1893,7 +1893,6 @@ alas: 46
 stayed: 46
 human: 46
 passeth: 46
-ships: 46
 square: 46
 wondered: 45
 laugh: 45
@@ -1960,6 +1959,7 @@ dying: 44
 eating: 44
 fatherless: 44
 barren: 44
+ships: 44
 tread: 43
 easy: 43
 pitched: 43
@@ -3889,7 +3889,6 @@ siceleg: 17
 express: 17
 abel: 17
 keepers: 17
-heavily: 17
 mistress: 17
 funny: 17
 achior: 17
@@ -4258,6 +4257,7 @@ sitting-room: 15
 couple: 15
 despair: 15
 crucify: 15
+heavily: 15
 openeth: 15
 teacher: 15
 speakest: 15
@@ -5911,8 +5911,8 @@ glittering: 9
 extinguished: 9
 weaned: 9
 aleph: 9
-tobacco: 9
 heated: 9
+tobacco: 9
 unlike: 9
 eggs: 9
 autumn: 9
@@ -10638,8 +10638,8 @@ oracles: 3
 rack: 3
 decent: 3
 floud: 3
-shear: 3
 innocency: 3
+shear: 3
 abiel: 3
 eighty-eight: 3
 ecstatic: 3
@@ -11763,8 +11763,8 @@ billet: 2
 plunging: 2
 fifty-one: 2
 frontiers: 2
-exactness: 2
 formality: 2
+exactness: 2
 dothan: 2
 poised: 2
 regards: 2
@@ -13222,8 +13222,8 @@ tharaca: 2
 sweetsmelling: 2
 lutheran: 2
 tricks: 2
-roasting: 2
 renowmed: 2
+roasting: 2
 fasteth: 2
 overseas: 2
 chananeites: 2
@@ -13625,8 +13625,8 @@ thinker: 2
 environed: 2
 turbulent: 2
 shamefaced: 2
-ahia: 2
 poplar: 2
+ahia: 2
 dreamer: 2
 reprehending: 2
 bagatha: 2
@@ -15239,8 +15239,8 @@ vewed: 1
 eliomas: 1
 darest: 1
 half-dozen: 1
-jadaia: 1
 corporally: 1
+jadaia: 1
 choketh: 1
 pheldas: 1
 spinster: 1
@@ -15613,8 +15613,8 @@ hasem: 1
 fullness: 1
 leddest: 1
 profanes: 1
-solder: 1
 piccolos: 1
+solder: 1
 radin: 1
 judah: 1
 roundwise: 1
@@ -16600,8 +16600,8 @@ illegal: 1
 jethraam: 1
 gong: 1
 societys: 1
-realistic: 1
 clothesthere: 1
+realistic: 1
 rioted: 1
 retyre: 1
 heran: 1
@@ -16683,8 +16683,8 @@ noge: 1
 jesters: 1
 beatitudes: 1
 relevant: 1
-rememberif: 1
 ordways: 1
+rememberif: 1
 derives: 1
 saree: 1
 fillest: 1
@@ -18186,8 +18186,8 @@ benches: 1
 breake: 1
 mesphar: 1
 thatched: 1
-requestwould: 1
 sharper: 1
+requestwould: 1
 quemadmodum: 1
 ambushments: 1
 bemoans: 1
@@ -18269,8 +18269,8 @@ outline: 1
 bedan: 1
 senders: 1
 chelions: 1
-monomaniac: 1
 sympathizing: 1
+monomaniac: 1
 aree: 1
 vulgare: 1
 sarei: 1
@@ -18451,8 +18451,8 @@ amorous: 1
 fairys: 1
 blasphemeing: 1
 precautions: 1
-unforgivably: 1
 weekes: 1
+unforgivably: 1
 amai: 1
 bubastus: 1
 rienluvre: 1
@@ -18584,8 +18584,8 @@ doting: 1
 manit: 1
 sheepfolds: 1
 wimpole: 1
-insanely: 1
 preuaricatour: 1
+insanely: 1
 oham: 1
 spindle: 1
 asleepshe: 1
@@ -18933,8 +18933,8 @@ resinae: 1
 disallow: 1
 beame: 1
 darke: 1
-echaia: 1
 long-limbed: 1
+echaia: 1
 jescha: 1
 allon: 1
 measureth: 1
@@ -19143,8 +19143,8 @@ supplieth: 1
 dejoces: 1
 conuert: 1
 keener: 1
-compliments: 1
 traction: 1
+compliments: 1
 wethers: 1
 elcese: 1
 calmness: 1
@@ -19299,8 +19299,8 @@ settler: 1
 caphira: 1
 bemoaned: 1
 luxuriant: 1
-loosened: 1
 zambris: 1
+loosened: 1
 locating: 1
 leaps: 1
 freckled: 1
@@ -19556,8 +19556,8 @@ contriving: 1
 benedictus: 1
 hailed: 1
 good-natured: 1
-jadon: 1
 noga: 1
+jadon: 1
 double-edged: 1
 relying: 1
 arphasachites: 1
@@ -19795,8 +19795,8 @@ cushioned: 1
 implying: 1
 comelie: 1
 blameworthy: 1
-papier: 1
 eternally: 1
+papier: 1
 vale-casis: 1
 manahen: 1
 needle-work: 1
@@ -20576,8 +20576,8 @@ rotterdam: 1
 inextricable: 1
 cope: 1
 peaked: 1
-lowliest: 1
 quartering: 1
+lowliest: 1
 humdrum: 1
 phesdomim: 1
 great-grandfather: 1
@@ -21137,8 +21137,8 @@ vaiedabber: 1
 henochites: 1
 mosollamith: 1
 badacer: 1
-approvest: 1
 placeat: 1
+approvest: 1
 well-fanned: 1
 politician: 1
 bungalow: 1
@@ -21988,8 +21988,8 @@ anise: 1
 incognito: 1
 habitabit: 1
 armsbut: 1
-clumps: 1
 besselon: 1
+clumps: 1
 neednt: 1
 clamavi: 1
 accho: 1
@@ -22760,8 +22760,8 @@ swank: 1
 attalia: 1
 morasthite: 1
 hubert: 1
-nadabia: 1
 thasi: 1
+nadabia: 1
 survived: 1
 succulent: 1
 relic: 1
@@ -23589,8 +23589,8 @@ meditating: 1
 perishable: 1
 lechi: 1
 depended: 1
-berodach: 1
 urchin: 1
+berodach: 1
 confirmeth: 1
 vapsi: 1
 instep: 1
