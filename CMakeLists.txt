@@ -1,29 +1,20 @@
 cmake_minimum_required(VERSION 3.27)
-
-set(CMAKE_CXX_COMPILER "/usr/bin/g++") # or clang for C
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-set(CMAKE_CXX_STANDARD 14)
-
 project(ParallelProcessing)
 
+# Set the C++ standard for the project
+set(CMAKE_CXX_STANDARD 20)
 
-# Define the target 'ParallelProcessing' and specify the source files
+set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
+# Find the MPI package
+find_package(MPI REQUIRED)
+
+# Define the executable target 'ParallelProcessing' and specify the source files
 add_executable(ParallelProcessing
-        Project2/openMP.cpp
-        Project2/HashNode.h
-        Project2/HashMap.h
-        Project2/WordCount.h
-        Project2/HashMap.cpp
-        Project2/Utils.h
-        Project2/Utils.cpp
+        Project3/openMPI.cpp
+        Project3/Utils.h
+        Project3/Utils.cpp
 )
 
-# Find the OpenMP package
-find_package(OpenMP)
-
-# If OpenMP is found, apply the flags to the target 'ParallelProcessing'
-if(OpenMP_CXX_FOUND)
-    target_compile_options(ParallelProcessing PRIVATE ${OpenMP_CXX_FLAGS})
-    target_link_libraries(ParallelProcessing PRIVATE ${OpenMP_CXX_LIBRARIES} -stdlib=libc++ -lc++)
-endif()
-
+# Link MPI libraries to the 'ParallelProcessing' target
+# Use the MPI::MPI_CXX target, which automatically sets include directories and link libraries
+target_link_libraries(ParallelProcessing MPI::MPI_CXX)
