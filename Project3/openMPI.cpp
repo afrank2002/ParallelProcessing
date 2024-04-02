@@ -32,7 +32,7 @@ int main() {
 
     rowsPerProcess = fileRows / worldSize;
     int startRow = worldRank * rowsPerProcess;
-    int endRow = (worldRank + 1) * rowsPerProcess - 1;
+    int endRow = (worldRank + 1) * rowsPerProcess;
    // cout << "PROCESS: " << worldRank << " start row: " << startRow << " end row: " << endRow << endl;
    // cout << "Pattern rows: " << patternRows << " Pattern Columns: " << patternColumns << endl;
     // Adjust the range for the last process to include any remaining rows

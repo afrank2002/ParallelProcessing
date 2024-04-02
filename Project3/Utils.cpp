@@ -133,6 +133,8 @@ void convertAndGatherMasterCoords(const string& processCoords, int worldRank, in
             combinedCoords += string(allCoords + i * MAX_COORD_LENGTH) + " ";
         }
         addCoords(combinedCoords); // Assuming addCoords can take a std::string
+        cout << "AlL THE COORDS: " << combinedCoords << endl;
+
         delete[] allCoords;
     }
 }
@@ -163,7 +165,9 @@ void dispatchMPI(string& fileName, int worldRank, int worldSize, int startRow, i
     int topCol = 0;
     int receivedLines;
     int needLines = 0;
-cout << "RANK: " << worldRank << " START: " << startRow+1 << " END: " << endRow+1 << endl;
+    bool rowNotRequested = true;
+
+    cout << "RANK: " << worldRank << " START: " << startRow << " END: " << endRow << endl;
     for (int i = 0; i < endRow - startRow; i++) {
         for (int j = 0; j < numColumns - columnLength; j++) {
             bool patternFound = true;
@@ -193,20 +197,19 @@ cout << "RANK: " << worldRank << " START: " << startRow+1 << " END: " << endRow+
                     }
 
                     //any process other than the first
-                    if(worldRank != 0  && i == int((endRow - startRow) - 1)) {
+                    if(worldRank != 0  && i == int((endRow - startRow) - 1) && rowNotRequested) {
                         counter++;
 
-                        cout << "RANK " << worldRank << " RECV PENDING " << counter << " ====" << endl;
+                        cout << "RANK " << worldRank << " RECV PEND " << counter << " ====" << endl;
                         MPI_Recv(&needLines, 1, MPI_INT, worldRank - 1, 18, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                       //  cout << "PROCESS " << worldRank << " RECV STATUS (18) : " << statuss <<  endl;
                         cout << "RANK " << worldRank << " RECV COMPLETE " << counter << " ========== " << endl;
-
+                        rowNotRequested = false;
                         if(needLines == 1)
                         {
                             cout << "[" << worldRank - 1 << "] NEEDS LINES. Preparing to send request." << endl;
 
                             MPI_Recv(&receivedLines, 1, MPI_INT, worldRank - 1, 7, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                            linesObtained = true;
                             cout << "[" << worldRank << "] received request." << endl;
 
                             int totalSize = 0;
@@ -241,12 +244,14 @@ cout << "RANK: " << worldRank << " START: " << startRow+1 << " END: " << endRow+
                     //Request more rows if not last Process
                     if (worldRank != worldSize - 1) {
                         if(patternFound && !patternComplete &&
-                        i == endRow - startRow && pi < rowLength - 1) { // Handle pattern extending beyond current chunk
+                        i == (endRow - startRow) && pi < rowLength - 1
+                        && rowNotRequested) { // Handle pattern extending beyond current chunk
                             cout << "WORLD RANK: " << worldRank << " PI: " << pi << " PJ: " << pj << endl;
                             needLines = 1; //true
                          //   cout << "SEND PENDING!" << endl;
                             MPI_Send(&needLines, 1, MPI_INT, worldRank + 1, 18, MPI_COMM_WORLD);
                           //  cout << "SEND COMPLETE!" << endl;
+                          rowNotRequested = false;
 
                             int neededLines = rowLength - pi;
                             string* additionalLines = new string[neededLines]; // Corrected variable name
@@ -263,12 +268,12 @@ cout << "RANK: " << worldRank << " START: " << startRow+1 << " END: " << endRow+
                                 patternComplete = true;
                             }
                             delete[] additionalLines; // Ensure to delete after use within each pattern checking iteration
-                            linesObtained = true;
                         }
                         else if((patternFound && patternComplete) ||
                                 !patternFound){
                             needLines = 0;
                             MPI_Send(&needLines, 1, MPI_INT, worldRank + 1, 18, MPI_COMM_WORLD);
+                            rowNotRequested = false;
                         }
                     }
                 }
@@ -285,6 +290,5 @@ cout << "RANK: " << worldRank << " START: " << startRow+1 << " END: " << endRow+
     convertAndGatherMasterCoords(masterCoords, worldRank, worldSize);
 
     cout << "[" << worldRank << "] Process complete. Cleaning up." << endl;
-    cout << "AlL THE COORDS: " << masterCoords << endl;
     delete[] processLines; // Clean up after processing all lines
 }
